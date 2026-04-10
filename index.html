@@ -168,7 +168,7 @@ canvas#waveformCanvas{width:100%;height:100%;display:block;pointer-events:none}
         <span class="offset-badge">offset <b id="offsetBadge">0.0s</b></span>
         <div class="vol-group">
           <label>Vid</label>
-          <input type="range" min="0" max="1" step=".01" value="0.3" id="vidVol" oninput="videoEl.volume=this.value">
+          <input type="range" min="0" max="1" step=".01" value="0" id="vidVol" oninput="videoEl.volume=this.value">
         </div>
         <div class="vol-group">
           <label>Music</label>
@@ -241,7 +241,7 @@ function loadVideo(file){
   const url=URL.createObjectURL(file);
   videoEl.src=url;videoEl.style.display='block';videoPlaceholder.style.display='none';
   transport.style.display='block';
-  videoEl.volume=document.getElementById('vidVol').value;
+  videoEl.volume=0;
   videoEl.addEventListener('loadedmetadata',()=>{updateRegion();updateTimeDisplay()},{once:true});
 }
 
@@ -252,9 +252,10 @@ document.getElementById('audioInput').addEventListener('change',e=>{
 
 function addTrack(file){
   const id=Date.now()+'_'+Math.random().toString(36).slice(2,6);
-  tracks.push({id,file,name:file.name.replace(/\.[^.]+$/,''),url:URL.createObjectURL(file)});
+  const t={id,file,name:file.name.replace(/\.[^.]+$/,''),url:URL.createObjectURL(file)};
+  tracks.push(t);
   renderTracks();
-  if(tracks.length===1)selectTrack(tracks[0].id);
+  if(!activeTrack)selectTrack(t.id);
 }
 
 function renderTracks(){
