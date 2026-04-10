@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SyncBooth — Music × Video Tester</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0c;--surface:#111114;--surface2:#18181c;--border:#252529;
+  --text:#e8e6e1;--text2:#8a8880;--accent:#c4f56a;--accent2:#a8d94e;
+  --danger:#f56a6a;--vidcolor:#5b9cf5;--vidcolor2:rgba(91,156,245,.15);
+  --mono:'DM Mono',monospace;--serif:'Instrument Serif',serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;overflow-x:hidden}
+::selection{background:var(--accent);color:var(--bg)}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--surface)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+.app{display:grid;grid-template-columns:1fr 300px;grid-template-rows:auto 1fr auto;height:100vh;gap:0}
+
+header{grid-column:1/-1;padding:12px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface)}
+header h1{font-family:var(--serif);font-size:22px;font-weight:400;letter-spacing:-.02em}
+header h1 span{color:var(--accent)}
+header .tag{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.12em;background:var(--surface2);padding:3px 10px;border-radius:2px;border:1px solid var(--border)}
+
+.main{grid-column:1;grid-row:2/4;display:flex;flex-direction:column;overflow:hidden}
+.video-wrap{flex:1;display:flex;align-items:center;justify-content:center;background:#000;position:relative;min-height:0}
+.video-wrap video{max-width:100%;max-height:100%;object-fit:contain}
+.video-placeholder{display:flex;flex-direction:column;align-items:center;gap:16px;color:var(--text2);cursor:pointer;padding:40px;border:2px dashed var(--border);border-radius:8px;transition:border-color .2s}
+.video-placeholder:hover{border-color:var(--accent)}
+.video-placeholder svg{opacity:.4}
+.video-placeholder span{font-size:12px;text-transform:uppercase;letter-spacing:.1em}
+
+/* ---- TRANSPORT ---- */
+.transport{background:var(--surface);border-top:1px solid var(--border);padding:14px 20px 12px}
+
+.timeline-labels{display:flex;justify-content:space-between;margin-bottom:4px}
+.timeline-labels span{font-size:9px;text-transform:uppercase;letter-spacing:.1em;display:flex;align-items:center;gap:5px}
+.tl-vid{color:var(--vidcolor)}
+.tl-aud{color:var(--accent)}
+.dot{width:6px;height:6px;border-radius:50%;display:inline-block}
+.vid-dot{background:var(--vidcolor)}
+.aud-dot{background:var(--accent)}
+
+.video-timeline{position:relative;height:20px;background:var(--surface2);border-radius:3px 3px 0 0;border:1px solid var(--border);border-bottom:none;cursor:pointer;overflow:hidden}
+.video-progress{position:absolute;top:0;left:0;bottom:0;background:rgba(91,156,245,.18);pointer-events:none}
+.video-playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--vidcolor);pointer-events:none;z-index:2}
+.video-time-label{position:absolute;top:50%;transform:translateY(-50%);right:8px;font-size:9px;color:var(--vidcolor);pointer-events:none;z-index:3;opacity:.8}
+
+.waveform-wrap{position:relative;height:84px;background:var(--surface2);border-radius:0 0 3px 3px;border:1px solid var(--border);cursor:default;overflow:hidden}
+canvas#waveformCanvas{width:100%;height:100%;display:block;pointer-events:none}
+
+.vid-region{position:absolute;top:0;bottom:0;background:var(--vidcolor2);border-left:2px solid var(--vidcolor);border-right:2px solid var(--vidcolor);cursor:grab;z-index:3;transition:background .15s;min-width:4px;user-select:none}
+.vid-region:hover,.vid-region.dragging{background:rgba(91,156,245,.25)}
+.vid-region.dragging{cursor:grabbing}
+.vid-region-label{position:absolute;top:4px;left:6px;font-size:8px;color:var(--vidcolor);text-transform:uppercase;letter-spacing:.1em;pointer-events:none;white-space:nowrap;opacity:.9}
+.vid-region-time{position:absolute;bottom:4px;left:6px;font-size:9px;color:var(--vidcolor);pointer-events:none;opacity:.8}
+
+.sync-playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--accent);z-index:5;pointer-events:none}
+
+.vid-region .edge{position:absolute;top:0;bottom:0;width:12px;cursor:col-resize;z-index:4}
+.vid-region .edge.left{left:-6px}
+.vid-region .edge.right{right:-6px}
+
+/* Ticks on waveform */
+.waveform-ticks{position:absolute;bottom:0;left:0;right:0;height:14px;pointer-events:none;z-index:1}
+
+.controls-row{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.controls-row button{background:none;border:1px solid var(--border);color:var(--text);padding:5px 14px;border-radius:3px;cursor:pointer;font-family:var(--mono);font-size:11px;transition:all .15s}
+.controls-row button:hover{border-color:var(--accent);color:var(--accent)}
+.controls-row button.primary{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:500}
+.controls-row button.primary:hover{background:var(--accent2)}
+.time-info{font-size:11px;color:var(--text2);display:flex;gap:14px;align-items:center}
+.time-info .ti{display:flex;align-items:center;gap:4px}
+.vol-group{display:flex;align-items:center;gap:5px;margin-left:auto}
+.vol-group label{color:var(--text2);font-size:9px;text-transform:uppercase;letter-spacing:.08em}
+.vol-group input[type=range]{width:60px;accent-color:var(--accent);height:14px}
+
+.offset-badge{font-size:10px;background:var(--surface2);border:1px solid var(--border);padding:2px 8px;border-radius:2px;color:var(--text2)}
+.offset-badge b{color:var(--vidcolor)}
+
+/* Sidebar */
+.sidebar{grid-column:2;grid-row:2/4;border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.sidebar-header h2{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--text2);font-weight:400}
+.add-music-btn{background:none;border:1px solid var(--border);color:var(--accent);padding:3px 10px;border-radius:3px;cursor:pointer;font-family:var(--mono);font-size:10px;transition:all .15s}
+.add-music-btn:hover{background:var(--accent);color:var(--bg)}
+
+.track-list{flex:1;overflow-y:auto;padding:4px 0}
+.track-item{padding:9px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);transition:background .1s}
+.track-item:hover{background:var(--surface2)}
+.track-item.active{background:var(--surface2);border-left:3px solid var(--accent)}
+.track-item .idx{color:var(--text2);font-size:9px;width:18px;text-align:right;flex-shrink:0}
+.track-item .name{flex:1;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track-item .dur{color:var(--text2);font-size:9px;flex-shrink:0}
+.track-item .remove-track{opacity:0;background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;padding:0 4px;transition:opacity .15s}
+.track-item:hover .remove-track{opacity:1}
+
+.sidebar-help{padding:10px 16px;border-top:1px solid var(--border);font-size:9px;color:var(--text2);line-height:1.6;background:var(--surface2)}
+.sidebar-help kbd{background:var(--border);padding:1px 5px;border-radius:2px;font-family:var(--mono);font-size:9px}
+
+.empty-sidebar{padding:28px 16px;text-align:center;color:var(--text2)}
+.empty-sidebar svg{margin-bottom:10px;opacity:.3}
+.empty-sidebar p{font-size:10px;line-height:1.6}
+
+.drop-overlay{position:fixed;inset:0;background:rgba(10,10,12,.92);z-index:999;display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;color:var(--accent);font-size:14px;letter-spacing:.05em;pointer-events:none}
+.drop-overlay.show{display:flex}
+.drop-overlay .ring{width:120px;height:120px;border:2px dashed var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;animation:pulse 1.5s ease infinite}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:.6}50%{transform:scale(1.08);opacity:1}}
+
+@media(max-width:800px){
+  .app{grid-template-columns:1fr;grid-template-rows:auto 50vh auto auto}
+  .sidebar{grid-column:1;grid-row:4;border-left:none;border-top:1px solid var(--border);max-height:260px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Sync<span>Booth</span></h1>
+    <span class="tag">Music × Video Tester</span>
+  </header>
+
+  <div class="main">
+    <div class="video-wrap" id="videoWrap">
+      <div class="video-placeholder" id="videoPlaceholder" onclick="document.getElementById('videoInput').click()">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10,8 16,12 10,16"/></svg>
+        <span>Drop video or click to upload</span>
+      </div>
+      <video id="videoEl" style="display:none" playsinline></video>
+      <input type="file" id="videoInput" accept="video/*" hidden>
+    </div>
+
+    <div class="transport" id="transport" style="display:none">
+      <div class="timeline-labels">
+        <span class="tl-vid"><span class="dot vid-dot"></span>Video Timeline</span>
+        <span class="tl-aud"><span class="dot aud-dot"></span>Audio Waveform &mdash; drag blue region to offset</span>
+      </div>
+
+      <div class="video-timeline" id="videoTimeline">
+        <div class="video-progress" id="videoProgress"></div>
+        <div class="video-playhead" id="videoPlayhead"></div>
+        <div class="video-time-label" id="videoTimeLabel">0:00 / 0:00</div>
+      </div>
+
+      <div class="waveform-wrap" id="waveformWrap">
+        <canvas id="waveformCanvas"></canvas>
+        <div class="waveform-ticks" id="waveformTicks"></div>
+        <div class="vid-region" id="vidRegion" style="display:none">
+          <span class="vid-region-label">Video</span>
+          <span class="vid-region-time" id="vidRegionTime"></span>
+          <div class="edge left" data-edge="left"></div>
+          <div class="edge right" data-edge="right"></div>
+        </div>
+        <div class="sync-playhead" id="syncPlayhead" style="display:none"></div>
+      </div>
+
+      <div class="controls-row">
+        <button class="primary" id="playBtn" onclick="togglePlay()">&#9654; Play</button>
+        <button onclick="stopAll()">&#9632; Stop</button>
+        <div class="time-info">
+          <span class="ti"><span class="dot vid-dot"></span><span id="vidTimeInfo">0:00</span></span>
+          <span class="ti"><span class="dot aud-dot"></span><span id="audTimeInfo">0:00</span></span>
+        </div>
+        <span class="offset-badge">offset <b id="offsetBadge">0.0s</b></span>
+        <div class="vol-group">
+          <label>Vid</label>
+          <input type="range" min="0" max="1" step=".01" value="0.3" id="vidVol" oninput="videoEl.volume=this.value">
+        </div>
+        <div class="vol-group">
+          <label>Music</label>
+          <input type="range" min="0" max="1" step=".01" value="1" id="musicVol" oninput="setMusicVolume(this.value)">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h2>Music Tracks</h2>
+      <button class="add-music-btn" onclick="document.getElementById('audioInput').click()">+ Add</button>
+      <input type="file" id="audioInput" accept="audio/*" multiple hidden>
+    </div>
+    <div class="track-list" id="trackList">
+      <div class="empty-sidebar" id="emptyMsg">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <p>Drop audio files here or click + Add.<br>Supports mp3, wav, ogg, m4a, flac.</p>
+      </div>
+    </div>
+    <div class="sidebar-help">
+      <strong>Controls</strong><br>
+      <kbd>Space</kbd> play/pause &nbsp; <kbd>&#8592;</kbd><kbd>&#8594;</kbd> seek video &#177;5s<br>
+      <kbd>Shift</kbd>+<kbd>&#8592;</kbd><kbd>&#8594;</kbd> nudge music offset &#177;0.5s<br>
+      Drag the <span style="color:var(--vidcolor)">blue region</span> on the waveform to slide where the music starts. Click the waveform background to jump offset. Click the video bar to seek.
+    </div>
+  </div>
+</div>
+
+<div class="drop-overlay" id="dropOverlay">
+  <div class="ring">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+  </div>
+  Drop files here
+</div>
+
+<script>
+const videoEl=document.getElementById('videoEl'),
+  videoPlaceholder=document.getElementById('videoPlaceholder'),
+  transport=document.getElementById('transport'),
+  waveformCanvas=document.getElementById('waveformCanvas'),
+  waveformWrap=document.getElementById('waveformWrap'),
+  waveformTicks=document.getElementById('waveformTicks'),
+  vidRegion=document.getElementById('vidRegion'),
+  vidRegionTime=document.getElementById('vidRegionTime'),
+  syncPlayhead=document.getElementById('syncPlayhead'),
+  videoTimeline=document.getElementById('videoTimeline'),
+  videoProgress=document.getElementById('videoProgress'),
+  videoPlayhead=document.getElementById('videoPlayhead'),
+  videoTimeLabel=document.getElementById('videoTimeLabel'),
+  playBtn=document.getElementById('playBtn'),
+  trackList=document.getElementById('trackList'),
+  emptyMsg=document.getElementById('emptyMsg');
+
+let tracks=[],activeTrack=null,audioCtx=null,gainNode=null,sourceNode=null,audioBuffer=null;
+let musicOffset=0,isPlaying=false,animFrame=null,waveformData=null;
+let regionDrag=null;
+
+function ensureAudioCtx(){
+  if(!audioCtx){
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    gainNode=audioCtx.createGain();gainNode.connect(audioCtx.destination);
+  }
+}
+
+// ---- VIDEO ----
+document.getElementById('videoInput').addEventListener('change',e=>{if(e.target.files[0])loadVideo(e.target.files[0])});
+function loadVideo(file){
+  const url=URL.createObjectURL(file);
+  videoEl.src=url;videoEl.style.display='block';videoPlaceholder.style.display='none';
+  transport.style.display='block';
+  videoEl.volume=document.getElementById('vidVol').value;
+  videoEl.addEventListener('loadedmetadata',()=>{updateRegion();updateTimeDisplay()},{once:true});
+}
+
+// ---- AUDIO TRACKS ----
+document.getElementById('audioInput').addEventListener('change',e=>{
+  for(const f of e.target.files)addTrack(f);e.target.value='';
+});
+
+function addTrack(file){
+  const id=Date.now()+'_'+Math.random().toString(36).slice(2,6);
+  tracks.push({id,file,name:file.name.replace(/\.[^.]+$/,''),url:URL.createObjectURL(file)});
+  renderTracks();
+  if(tracks.length===1)selectTrack(tracks[0].id);
+}
+
+function renderTracks(){
+  emptyMsg.style.display=tracks.length?'none':'block';
+  trackList.querySelectorAll('.track-item').forEach(i=>i.remove());
+  tracks.forEach((t,i)=>{
+    const div=document.createElement('div');
+    div.className='track-item'+(activeTrack&&activeTrack.id===t.id?' active':'');
+    div.innerHTML=`<span class="idx">${i+1}</span><span class="name">${t.name}</span><span class="dur" id="dur_${t.id}"></span><button class="remove-track" onclick="event.stopPropagation();removeTrack('${t.id}')">&times;</button>`;
+    div.onclick=()=>selectTrack(t.id);
+    trackList.appendChild(div);
+    const tmp=new Audio(t.url);
+    tmp.addEventListener('loadedmetadata',()=>{const d=document.getElementById('dur_'+t.id);if(d)d.textContent=fmt(tmp.duration)});
+  });
+}
+
+function removeTrack(id){
+  if(activeTrack&&activeTrack.id===id){stopAll();activeTrack=null;audioBuffer=null;waveformData=null;clearCanvas();vidRegion.style.display='none';syncPlayhead.style.display='none';waveformTicks.innerHTML=''}
+  tracks=tracks.filter(t=>t.id!==id);renderTracks();
+}
+
+async function selectTrack(id){
+  const t=tracks.find(x=>x.id===id);if(!t)return;
+  stopAll();activeTrack=t;renderTracks();ensureAudioCtx();
+  const resp=await fetch(t.url);const arrBuf=await resp.arrayBuffer();
+  audioBuffer=await audioCtx.decodeAudioData(arrBuf);
+  buildWaveform(audioBuffer);drawTicks();
+  musicOffset=0;updateRegion();updateOffsetBadge();
+}
+
+// ---- WAVEFORM ----
+function buildWaveform(buf){
+  const raw=buf.getChannelData(0);
+  const w=waveformWrap.clientWidth;const samples=w*2;
+  waveformData=new Float32Array(samples);
+  const bs=Math.floor(raw.length/samples);
+  for(let i=0;i<samples;i++){let s=0;for(let j=0;j<bs;j++)s+=Math.abs(raw[i*bs+j]);waveformData[i]=s/bs}
+  drawWaveform();
+}
+
+function drawWaveform(){
+  const canvas=waveformCanvas;const dpr=window.devicePixelRatio||1;
+  const rect=waveformWrap.getBoundingClientRect();
+  canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;
+  const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);
+  const w=rect.width,h=rect.height;ctx.clearRect(0,0,w,h);
+  if(!waveformData)return;
+  const barW=w/waveformData.length;
+  const maxVal=Math.max(...waveformData)||1;
+  for(let i=0;i<waveformData.length;i++){
+    const v=waveformData[i]/maxVal;const bh=v*(h*.78);
+    ctx.fillStyle='#c4f56a';ctx.globalAlpha=.25+v*.55;
+    ctx.fillRect(i*barW,(h-bh)/2,Math.max(barW-.5,1),bh);
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawTicks(){
+  waveformTicks.innerHTML='';
+  if(!audioBuffer)return;
+  const dur=audioBuffer.duration;
+  const step=dur<30?5:dur<120?10:dur<300?30:60;
+  for(let t=step;t<dur;t+=step){
+    const pct=(t/dur)*100;
+    const el=document.createElement('div');
+    el.style.cssText=`position:absolute;left:${pct}%;bottom:0;height:100%;border-left:1px solid rgba(255,255,255,.06);`;
+    const lbl=document.createElement('span');
+    lbl.style.cssText='position:absolute;bottom:1px;left:3px;font-size:8px;color:rgba(255,255,255,.2);font-family:var(--mono);white-space:nowrap';
+    lbl.textContent=fmt(t);
+    el.appendChild(lbl);waveformTicks.appendChild(el);
+  }
+}
+
+function clearCanvas(){const ctx=waveformCanvas.getContext('2d');ctx.clearRect(0,0,waveformCanvas.width,waveformCanvas.height)}
+
+// ---- VIDEO REGION OVERLAY ----
+function updateRegion(){
+  if(!audioBuffer||!videoEl.duration){vidRegion.style.display='none';return}
+  vidRegion.style.display='block';syncPlayhead.style.display='block';
+  const aDur=audioBuffer.duration,vDur=videoEl.duration;
+  const leftPct=Math.max((musicOffset/aDur)*100,0);
+  const widthPct=Math.min((vDur/aDur)*100,100-leftPct);
+  vidRegion.style.left=leftPct+'%';vidRegion.style.width=widthPct+'%';
+  vidRegionTime.textContent=fmt(musicOffset)+' \u2192 '+fmt(musicOffset+vDur);
+}
+
+function updateOffsetBadge(){document.getElementById('offsetBadge').textContent=musicOffset.toFixed(1)+'s'}
+
+// ---- PLAYBACK ----
+function togglePlay(){isPlaying?pause():play()}
+
+function play(){
+  if(!videoEl.src)return;ensureAudioCtx();
+  if(audioCtx.state==='suspended')audioCtx.resume();
+  videoEl.play();
+  startAudioFromCurrentPos();
+  isPlaying=true;playBtn.innerHTML='&#10074;&#10074; Pause';tick();
+}
+
+function startAudioFromCurrentPos(){
+  if(!audioBuffer)return;
+  if(sourceNode){try{sourceNode.stop()}catch(e){}}
+  sourceNode=audioCtx.createBufferSource();
+  sourceNode.buffer=audioBuffer;sourceNode.connect(gainNode);
+  const audioStart=musicOffset+videoEl.currentTime;
+  if(audioStart>=0&&audioStart<audioBuffer.duration){
+    sourceNode.start(0,audioStart);
+  }else if(audioStart<0){
+    sourceNode.start(audioCtx.currentTime+Math.abs(audioStart),0);
+  }
+}
+
+function pause(){
+  videoEl.pause();if(sourceNode){try{sourceNode.stop()}catch(e){}}
+  isPlaying=false;playBtn.innerHTML='&#9654; Play';cancelAnimationFrame(animFrame);
+}
+
+function stopAll(){
+  videoEl.pause();videoEl.currentTime=0;
+  if(sourceNode){try{sourceNode.stop()}catch(e){}}
+  isPlaying=false;playBtn.innerHTML='&#9654; Play';cancelAnimationFrame(animFrame);
+  updateTimeDisplay();updatePlayheads();
+}
+
+function tick(){
+  if(!isPlaying)return;
+  updateTimeDisplay();updatePlayheads();
+  animFrame=requestAnimationFrame(tick);
+}
+
+function updatePlayheads(){
+  const vd=videoEl.duration||1;
+  const vPct=(videoEl.currentTime/vd)*100;
+  videoPlayhead.style.left=vPct+'%';videoProgress.style.width=vPct+'%';
+  if(audioBuffer){
+    const aPos=musicOffset+videoEl.currentTime;
+    syncPlayhead.style.left=Math.min(Math.max((aPos/audioBuffer.duration)*100,0),100)+'%';
+  }
+}
+
+function updateTimeDisplay(){
+  const vc=videoEl.currentTime||0,vd=videoEl.duration||0;
+  videoTimeLabel.textContent=fmt(vc)+' / '+fmt(vd);
+  document.getElementById('vidTimeInfo').textContent=fmt(vc);
+  document.getElementById('audTimeInfo').textContent=audioBuffer?fmt(musicOffset+vc):'--';
+}
+
+function setMusicVolume(v){if(gainNode)gainNode.gain.value=v}
+function fmt(s){if(!s||!isFinite(s))return'0:00';const neg=s<0;s=Math.abs(s);const m=Math.floor(s/60),sec=Math.floor(s%60);return(neg?'-':'')+m+':'+String(sec).padStart(2,'0')}
+
+function setOffset(v){
+  if(!audioBuffer)return;
+  const maxOff=Math.max(audioBuffer.duration-(videoEl.duration||0),0);
+  musicOffset=Math.max(0,Math.min(v,maxOff));
+  updateRegion();updateOffsetBadge();updatePlayheads();
+  if(isPlaying){
+    if(sourceNode){try{sourceNode.stop()}catch(e){}}
+    startAudioFromCurrentPos();
+  }
+}
+
+// ---- INTERACTIONS ----
+
+// Video timeline: click to seek
+videoTimeline.addEventListener('mousedown',e=>{
+  const pct=pctFrom(e,videoTimeline);
+  videoEl.currentTime=pct*(videoEl.duration||0);
+  if(isPlaying){if(sourceNode){try{sourceNode.stop()}catch(e){}}startAudioFromCurrentPos()}
+  updateTimeDisplay();updatePlayheads();
+
+  const onMove=ev=>{
+    const p=pctFrom(ev,videoTimeline);
+    videoEl.currentTime=p*(videoEl.duration||0);
+    if(isPlaying){if(sourceNode){try{sourceNode.stop()}catch(e){}}startAudioFromCurrentPos()}
+    updateTimeDisplay();updatePlayheads();
+  };
+  const onUp=()=>{document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp)};
+  document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);
+});
+
+// Drag vid-region to change offset
+vidRegion.addEventListener('mousedown',e=>{
+  if(e.target.dataset.edge)return;
+  e.preventDefault();
+  regionDrag={type:'move',startX:e.clientX,startOffset:musicOffset};
+  vidRegion.classList.add('dragging');
+});
+
+vidRegion.querySelectorAll('.edge').forEach(edge=>{
+  edge.addEventListener('mousedown',e=>{
+    e.preventDefault();e.stopPropagation();
+    regionDrag={type:edge.dataset.edge,startX:e.clientX,startOffset:musicOffset};
+    vidRegion.classList.add('dragging');
+  });
+});
+
+document.addEventListener('mousemove',e=>{
+  if(!regionDrag||!audioBuffer)return;
+  const rect=waveformWrap.getBoundingClientRect();
+  const dx=e.clientX-regionDrag.startX;
+  const dSec=(dx/rect.width)*audioBuffer.duration;
+  if(regionDrag.type==='move'||regionDrag.type==='left'){
+    setOffset(regionDrag.startOffset+dSec);
+  }
+});
+
+document.addEventListener('mouseup',()=>{
+  if(regionDrag){vidRegion.classList.remove('dragging');regionDrag=null}
+});
+
+// Click waveform background to jump offset
+waveformWrap.addEventListener('mousedown',e=>{
+  if(e.target===waveformWrap||e.target===waveformCanvas||e.target.parentElement===waveformTicks){
+    if(!audioBuffer)return;
+    setOffset(pctFrom(e,waveformWrap)*audioBuffer.duration);
+  }
+});
+
+function pctFrom(e,el){const r=el.getBoundingClientRect();return Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))}
+
+// ---- KEYBOARD ----
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if(e.code==='Space'){e.preventDefault();togglePlay()}
+  if(e.code==='ArrowRight'&&!e.shiftKey){e.preventDefault();videoEl.currentTime=Math.min(videoEl.duration,videoEl.currentTime+5);if(isPlaying){if(sourceNode){try{sourceNode.stop()}catch(e){}}startAudioFromCurrentPos()}updateTimeDisplay();updatePlayheads()}
+  if(e.code==='ArrowLeft'&&!e.shiftKey){e.preventDefault();videoEl.currentTime=Math.max(0,videoEl.currentTime-5);if(isPlaying){if(sourceNode){try{sourceNode.stop()}catch(e){}}startAudioFromCurrentPos()}updateTimeDisplay();updatePlayheads()}
+  if(e.code==='ArrowRight'&&e.shiftKey){e.preventDefault();setOffset(musicOffset+0.5)}
+  if(e.code==='ArrowLeft'&&e.shiftKey){e.preventDefault();setOffset(musicOffset-0.5)}
+});
+
+// ---- DRAG & DROP ----
+let dragCounter=0;
+document.addEventListener('dragenter',e=>{e.preventDefault();dragCounter++;document.getElementById('dropOverlay').classList.add('show')});
+document.addEventListener('dragleave',e=>{e.preventDefault();dragCounter--;if(dragCounter<=0){dragCounter=0;document.getElementById('dropOverlay').classList.remove('show')}});
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>{
+  e.preventDefault();dragCounter=0;document.getElementById('dropOverlay').classList.remove('show');
+  for(const f of e.dataTransfer.files){
+    if(f.type.startsWith('video/'))loadVideo(f);
+    else if(f.type.startsWith('audio/'))addTrack(f);
+  }
+});
+
+window.addEventListener('resize',()=>{if(waveformData){drawWaveform();drawTicks();updateRegion();updatePlayheads()}});
+</script>
+</body>
+</html>
