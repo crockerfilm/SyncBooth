@@ -79,6 +79,31 @@ canvas#waveformCanvas{width:100%;height:100%;display:block;pointer-events:none}
 .vol-group label{color:var(--text2);font-size:9px;text-transform:uppercase;letter-spacing:.08em}
 .vol-group input[type=range]{width:60px;accent-color:var(--accent);height:14px}
 
+.render-btn{background:var(--vidcolor)!important;color:#fff!important;border-color:var(--vidcolor)!important;font-weight:500;display:flex;align-items:center;gap:5px;padding:5px 16px!important;border-radius:3px;cursor:pointer;font-family:var(--mono);font-size:11px;border:1px solid;transition:all .15s}
+.render-btn:hover{filter:brightness(1.15)!important}
+.render-btn:disabled{opacity:.5;pointer-events:none}
+
+/* Render Modal */
+.render-overlay{position:fixed;inset:0;background:rgba(10,10,12,.88);z-index:1000;display:none;align-items:center;justify-content:center}
+.render-overlay.show{display:flex}
+.render-modal{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:28px 32px;min-width:380px;max-width:480px;text-align:center}
+.render-modal h3{font-family:var(--serif);font-size:20px;font-weight:400;margin-bottom:4px}
+.render-modal h3 span{color:var(--vidcolor)}
+.render-modal .render-sub{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:20px}
+.render-progress-wrap{background:var(--surface2);border:1px solid var(--border);border-radius:4px;height:28px;overflow:hidden;position:relative;margin-bottom:12px}
+.render-progress-bar{height:100%;background:linear-gradient(90deg,var(--vidcolor),var(--accent));width:0%;transition:width .3s ease;border-radius:3px}
+.render-progress-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text);letter-spacing:.05em;z-index:1}
+.render-status{font-size:11px;color:var(--text2);margin-bottom:16px;min-height:18px}
+.render-actions{display:flex;gap:8px;justify-content:center}
+.render-actions button{background:none;border:1px solid var(--border);color:var(--text);padding:6px 18px;border-radius:3px;cursor:pointer;font-family:var(--mono);font-size:11px;transition:all .15s}
+.render-actions button:hover{border-color:var(--accent);color:var(--accent)}
+.render-actions button.dl-btn{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:500;display:none}
+.render-actions button.dl-btn:hover{background:var(--accent2)}
+.render-actions button.dl-btn.show{display:inline-block}
+.render-preview{margin-top:16px;display:none}
+.render-preview.show{display:block}
+.render-preview video{max-width:100%;max-height:200px;border-radius:4px;border:1px solid var(--border)}
+
 .offset-badge{font-size:10px;background:var(--surface2);border:1px solid var(--border);padding:2px 8px;border-radius:2px;color:var(--text2)}
 .offset-badge b{color:var(--vidcolor)}
 
@@ -174,6 +199,7 @@ canvas#waveformCanvas{width:100%;height:100%;display:block;pointer-events:none}
           <label>Music</label>
           <input type="range" min="0" max="1" step=".01" value="1" id="musicVol" oninput="setMusicVolume(this.value)">
         </div>
+        <button class="render-btn" id="renderBtn" onclick="startRender()">&#11206; Render</button>
       </div>
     </div>
   </div>
@@ -195,6 +221,25 @@ canvas#waveformCanvas{width:100%;height:100%;display:block;pointer-events:none}
       <kbd>Space</kbd> play/pause &nbsp; <kbd>&#8592;</kbd><kbd>&#8594;</kbd> seek video &#177;5s<br>
       <kbd>Shift</kbd>+<kbd>&#8592;</kbd><kbd>&#8594;</kbd> nudge music offset &#177;0.5s<br>
       Drag the <span style="color:var(--vidcolor)">blue region</span> on the waveform to slide where the music starts. Click the waveform background to jump offset. Click the video bar to seek.
+    </div>
+  </div>
+</div>
+
+<div class="render-overlay" id="renderOverlay">
+  <div class="render-modal">
+    <h3>Rendering <span>Video</span></h3>
+    <div class="render-sub">Combining video + synced audio</div>
+    <div class="render-progress-wrap">
+      <div class="render-progress-bar" id="renderProgressBar"></div>
+      <div class="render-progress-text" id="renderProgressText">0%</div>
+    </div>
+    <div class="render-status" id="renderStatus">Preparing...</div>
+    <div class="render-preview" id="renderPreview">
+      <video id="renderPreviewVideo" controls></video>
+    </div>
+    <div class="render-actions">
+      <button onclick="cancelRender()">Cancel</button>
+      <button class="dl-btn" id="renderDownloadBtn" onclick="downloadRender()">&#11206; Download</button>
     </div>
   </div>
 </div>
@@ -241,7 +286,7 @@ function loadVideo(file){
   const url=URL.createObjectURL(file);
   videoEl.src=url;videoEl.style.display='block';videoPlaceholder.style.display='none';
   transport.style.display='block';
-  videoEl.volume=0;
+  videoEl.volume=document.getElementById('vidVol').value;
   videoEl.addEventListener('loadedmetadata',()=>{updateRegion();updateTimeDisplay()},{once:true});
 }
 
@@ -252,10 +297,9 @@ document.getElementById('audioInput').addEventListener('change',e=>{
 
 function addTrack(file){
   const id=Date.now()+'_'+Math.random().toString(36).slice(2,6);
-  const t={id,file,name:file.name.replace(/\.[^.]+$/,''),url:URL.createObjectURL(file)};
-  tracks.push(t);
+  tracks.push({id,file,name:file.name.replace(/\.[^.]+$/,''),url:URL.createObjectURL(file)});
   renderTracks();
-  if(!activeTrack)selectTrack(t.id);
+  selectTrack(id);
 }
 
 function renderTracks(){
@@ -500,6 +544,173 @@ document.addEventListener('drop',e=>{
 });
 
 window.addEventListener('resize',()=>{if(waveformData){drawWaveform();drawTicks();updateRegion();updatePlayheads()}});
+
+// ---- RENDER / EXPORT ----
+let renderAborted=false, renderBlobUrl=null, renderIsMP4=false;
+
+function startRender(){
+  if(!videoEl.src){alert('Load a video first.');return}
+  ensureAudioCtx();
+  renderAborted=false;
+  renderBlobUrl=null;
+
+  // Show modal
+  const overlay=document.getElementById('renderOverlay');
+  overlay.classList.add('show');
+  document.getElementById('renderProgressBar').style.width='0%';
+  document.getElementById('renderProgressText').textContent='0%';
+  document.getElementById('renderStatus').textContent='Setting up render pipeline...';
+  document.getElementById('renderDownloadBtn').classList.remove('show');
+  document.getElementById('renderPreview').classList.remove('show');
+
+  // Pause any current playback
+  pause();
+
+  // Use an offscreen canvas to capture video frames
+  const canvas=document.createElement('canvas');
+  const vw=videoEl.videoWidth||1280;
+  const vh=videoEl.videoHeight||720;
+  canvas.width=vw;canvas.height=vh;
+  const ctx=canvas.getContext('2d');
+
+  // Create an offline audio context for mixing
+  const renderAudioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  const renderDest=renderAudioCtx.createMediaStreamDestination();
+
+  // Video audio (from video element) — create a source from video
+  const videoStream=videoEl.captureStream?videoEl.captureStream():videoEl.mozCaptureStream();
+  let videoAudioTrack=null;
+  if(videoStream.getAudioTracks().length>0){
+    const videoAudioSource=renderAudioCtx.createMediaStreamSource(new MediaStream([videoStream.getAudioTracks()[0]]));
+    const vidGain=renderAudioCtx.createGain();
+    vidGain.gain.value=parseFloat(document.getElementById('vidVol').value);
+    videoAudioSource.connect(vidGain);
+    vidGain.connect(renderDest);
+  }
+
+  // Music audio — use an AudioBufferSourceNode
+  let musicSource=null;
+  if(audioBuffer){
+    musicSource=renderAudioCtx.createBufferSource();
+    musicSource.buffer=audioBuffer;
+    const musicGain=renderAudioCtx.createGain();
+    musicGain.gain.value=parseFloat(document.getElementById('musicVol').value);
+    musicSource.connect(musicGain);
+    musicGain.connect(renderDest);
+  }
+
+  // Canvas stream for video track
+  const canvasStream=canvas.captureStream(30);
+
+  // Combine canvas video + mixed audio into one stream
+  const combinedStream=new MediaStream([
+    ...canvasStream.getVideoTracks(),
+    ...renderDest.stream.getAudioTracks()
+  ]);
+
+  // Determine codec — prefer mp4 for native playback, fall back to webm
+  const mimeType=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'video/webm';
+  const isMP4=mimeType.startsWith('video/mp4');
+
+  const recorder=new MediaRecorder(combinedStream,{mimeType,videoBitsPerSecond:5000000});
+  const chunks=[];
+  recorder.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data)};
+
+  recorder.onstop=()=>{
+    if(renderAborted){
+      renderAudioCtx.close();
+      return;
+    }
+    const blob=new Blob(chunks,{type:mimeType});
+    renderBlobUrl=URL.createObjectURL(blob);
+    renderIsMP4=isMP4;
+    document.getElementById('renderStatus').textContent='Render complete!';    document.getElementById('renderProgressBar').style.width='100%';
+    document.getElementById('renderProgressText').textContent='100%';
+    document.getElementById('renderDownloadBtn').classList.add('show');
+
+    // Show preview
+    const previewEl=document.getElementById('renderPreviewVideo');
+    previewEl.src=renderBlobUrl;
+    document.getElementById('renderPreview').classList.add('show');
+
+    renderAudioCtx.close();
+  };
+
+  recorder.onerror=()=>{
+    document.getElementById('renderStatus').textContent='Render failed. Try a shorter clip.';
+    renderAudioCtx.close();
+  };
+
+  // Start recording
+  recorder.start(100);
+
+  // Start video playback from beginning
+  videoEl.currentTime=0;
+  videoEl.muted=true; // mute during render to avoid echo
+  const vidDuration=videoEl.duration;
+
+  // Schedule music with offset
+  if(musicSource&&audioBuffer){
+    const audioStart=musicOffset;
+    if(audioStart>=0&&audioStart<audioBuffer.duration){
+      musicSource.start(0,audioStart);
+    }else if(audioStart<0){
+      musicSource.start(Math.abs(audioStart),0);
+    }
+  }
+
+  document.getElementById('renderStatus').textContent='Rendering frames...';
+
+  // Frame pump: draw video to canvas at ~30fps
+  let renderAnimFrame=null;
+  function pumpFrame(){
+    if(renderAborted){
+      recorder.stop();videoEl.pause();videoEl.muted=false;
+      if(musicSource){try{musicSource.stop()}catch(e){}}
+      return;
+    }
+    ctx.drawImage(videoEl,0,0,vw,vh);
+
+    const pct=Math.min((videoEl.currentTime/vidDuration)*100,100);
+    document.getElementById('renderProgressBar').style.width=pct+'%';
+    document.getElementById('renderProgressText').textContent=Math.round(pct)+'%';
+    document.getElementById('renderStatus').textContent='Rendering... '+fmt(videoEl.currentTime)+' / '+fmt(vidDuration);
+
+    if(videoEl.ended||videoEl.currentTime>=vidDuration-0.05){
+      // Done — draw one last frame
+      ctx.drawImage(videoEl,0,0,vw,vh);
+      setTimeout(()=>{
+        recorder.stop();
+        videoEl.muted=false;
+        if(musicSource){try{musicSource.stop()}catch(e){}}
+      },300);
+      return;
+    }
+    renderAnimFrame=requestAnimationFrame(pumpFrame);
+  }
+
+  videoEl.play().then(()=>{
+    pumpFrame();
+  }).catch(err=>{
+    document.getElementById('renderStatus').textContent='Playback error: '+err.message;
+    renderAudioCtx.close();
+  });
+}
+
+function cancelRender(){
+  renderAborted=true;
+  document.getElementById('renderOverlay').classList.remove('show');
+  videoEl.pause();videoEl.muted=false;videoEl.currentTime=0;
+  if(renderBlobUrl){URL.revokeObjectURL(renderBlobUrl);renderBlobUrl=null}
+}
+
+function downloadRender(){
+  if(!renderBlobUrl)return;
+  const a=document.createElement('a');
+  a.href=renderBlobUrl;
+  a.download='syncbooth_render_'+Date.now()+(renderIsMP4?'.mp4':'.webm');
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+}
 </script>
 </body>
 </html>
